@@ -69,7 +69,8 @@ pipeline {
               }
 		      }
           else {
-              def app = openshift.newApp("${env.componentName}")
+	      def app = openshift.newApp("${env.projectName}/${env.componentName}:${env.buildTag}")
+             //def app = openshift.newApp("${env.componentName}")
               def appdc = openshift.selector("dc", "${env.componentName}")
               while (appdc.object().spec.replicas != appdc.object().status.availableReplicas) {
                   sleep 10
