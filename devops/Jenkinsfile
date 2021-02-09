@@ -1,6 +1,4 @@
-def getdependencies(){
-  return ["cartservice", "orchestratorservice", "estore-inventoryservice", "estore-order-management", "estore-paymentservice", "estore-shipping", "estore-cachemanager"]
-}
+
 pipeline {
   agent { 
     node { label 'maven' }      
@@ -8,124 +6,24 @@ pipeline {
   environment {
         def readContent = readJSON file: './devops/env.json'
         componentName = "${readContent['component_name']}"
-        projectName = "${namespace}"
-	devopsNamespace = "devops"  
-	LoadTest =  "${readContent['load_test']}"
-	LoadTestPipeline = "devops/loadtest.yaml"  
-        builderImage = "jboss-eap72-openshift-newrelic";
+        projectName = "devtest" 
+        builderImage = "jboss-eap72-openshift";
         latestTag = "latest";
         buildTag = "Build-${BUILD_NUMBER}";
         releaseTag = "qa";
-        expSqdTag = "ibm-enablement";
-	dbuser= "invuser";  
-	dbpassword = "invpwd";   
-	dbservicename= "microservicedb";
-	databasename= "postgresql";
-	redistemplate= "redis-ephemeral"; 
-	redisservicename="redis-product-store";  
-	redispassword = "estore";
-	mongodbtemplate="mongodb-ephemeral-microservice";
-	mongodbservice="catalogdbservice";
-	mongodbuser="cataloguser";
-	mongodbpassword="catalogpwd";
-	mongodbdatabse="productsDB";	
-	language = "java";
-	projectkey = "testkey";   
-        databasetemplate="postgresql-ephemeral-order-management";
-        binaryArtifact = readMavenPom().getArtifactId()
-        binaryArtifactId = readMavenPom().getVersion()
-	orchestratorserviceRoute = "orchestratorservice"
-	estoreorderRoute = "estore-order-management"
-	estorepaymentserviceRoute = "estore-paymentservice"
-	shippmentserviceRoute = "estore-shipping"
-	ROUTEcacheservice = "estore-cachemanager"
-	configmap = "yaml/estore-ui-cm.yaml"
-	yaml = "yaml/estore-ui.yaml"
-	imagestream = "yaml/imagestream.yaml"
-	  
+        expSqdTag = "ibm-enablement";	  
       }  
   stages {
-
-    stage('Checking Routes') {
-      steps {
-       script {
-        openshift.withCluster() {
-          openshift.withProject("${env.projectName}") {
-          //Application Deployment
-		 // echo dependencies
-	  for ( checkRoute in getdependencies() ) {
-          def route = openshift.selector("route", checkRoute)
-	  if ( route.exists() )
-           {	  
-          echo route.object().spec.host
-	   } else { 
-	  timeout(40) {
-         echo "Wait for 5 Sec build to be completed..."
-         waitUntil {
-		 try { 
-           return ( route.object().status.ingress[0].conditions[0].status == "True")
-		 } catch (exception) {
-                  return false
-	      }
-	 } 
-	  }		  
-         }
-       } 	     
-         
-		  
-		  
-          }
-        }
-	      }
-    	}
-    }	   
 	  
   stage('Build App') { 
   
      steps {
        script{      
-       sh "mvn install -DskipTests=true"
+       sh "mvn package -DskipTests=true"
        }
       }
     }
-    stage('Unit Test') {
-
-      steps {
-       script{      
-           sh "mvn test"
-         }
-        step([$class: 'JUnitResultArchiver', testResults: '**/target/surefire-reports/TEST-*.xml'])
-      }  
-    }
-   stage('Code Analysis') {
-
-      steps {
-        withSonarQubeEnv('sonarscanner') { 
-       sh 'mvn org.sonarsource.scanner.maven:sonar-maven-plugin:3.3.0.603:sonar -f pom.xml -Dsonar.host.url=$SONAR_HOST_URL -Dsonar.login=$SONAR_AUTH_TOKEN -Dsonar.projectKey="$projectkey" -Dsonar.language=$language -Dsonar.sources=. -Dsonar.java.binaries=target/classes -Dsonar.tests=. -Dsonar.test.inclusions=**/*Test*/* -Dsonar.exclusions=target/**/*.class'
-     }
-	 
-      }
-    } 
-	  
-    stage('Deploy ImageStream') {
-      steps {
-       script {
-        openshift.withCluster() {
-          openshift.withProject("${env.projectName}") {
-          //Application Deployment
-          if ( openshift.selector("is", "${env.builderImage}").exists()) {
-		          echo " ${env.builderImage} ImageStream already created."
-          }
-          else {
-           sh "oc process -f ${env.imagestream}  | oc create -f - -n ${env.projectName}"
-           echo "ImageStream is created"
-              }
-          }
-        }
-	      }
-    	}
-    }
-	  
+   	  
  stage('Create Image') {
       steps {
         script {
@@ -140,7 +38,6 @@ pipeline {
               echo "Found BuildConfig ${env.componentName}"
             }
             echo "Starting Image Build"
-              sh "oc set build-secret --pull bc/${env.componentName} all-icr-io -n ${env.projectName}"	      
 	      sh "ls -ltr target/" 
 	      bc.startBuild("--from-file=./target/${env.binaryArtifact}.war","--follow=true")
 	      echo "oc start-build ${env.componentName} --from-file=./target/${env.binaryArtifact}.war --follow -n ${env.projectName}"	         
@@ -153,29 +50,6 @@ pipeline {
       }
     } 
 	  
-	  stage('Deploy ConfigMap') {
-      steps {
-       script {
-        openshift.withCluster() {
-          openshift.withProject("${env.projectName}") {
-          //Application Deployment
-          if ( openshift.selector("cm", "${env.componentName}").exists()) {
-		          echo " ${env.componentName} configmap already created."
-          }
-          else {
-            // def URL = openshift.selector("route", "${env.modelRoute}", "--template='{{.spec.host}}'")
-	   ROUTEorchestratorservice = sh(returnStdout: true, script: "oc get route ${env.orchestratorserviceRoute} --template='{{.spec.host}}' -n ${env.projectName}").trim()
-	   ROUTEeordermanagement = sh(returnStdout: true, script: "oc get route ${env.estoreorderRoute} --template='{{.spec.host}}' -n ${env.projectName}").trim()
-           ROUTEpaymentservice = sh(returnStdout: true, script: "oc get route ${env.estorepaymentserviceRoute} --template='{{.spec.host}}' -n ${env.projectName}").trim()
-           ROUTEshipping = sh(returnStdout: true, script: "oc get route ${env.shippmentserviceRoute} --template='{{.spec.host}}' -n ${env.projectName}").trim()
-           sh "oc process -f ${env.configmap} -p NAMESPACE=${env.projectName} -p shippment=${ROUTEshipping}  -p orchestratorservice=${ROUTEorchestratorservice} -p ordermanagement=${ROUTEeordermanagement} -p paymentservice=${ROUTEpaymentservice} | oc create -f - -n ${env.projectName}"
-           echo "ConfigMap is created"
-              }
-          }
-        }
-	      }
-    	}
-    }
 	  
      stage('Deploy Application') {
       	steps {
@@ -195,7 +69,7 @@ pipeline {
               }
 		      }
           else {
-              def app = openshift.newApp("-f ${env.yaml}", "-p ESTOREUI_NAME=${componentName}")
+              def app = openshift.newApp("${env.componentName}")
               def appdc = openshift.selector("dc", "${env.componentName}")
               while (appdc.object().spec.replicas != appdc.object().status.availableReplicas) {
                   sleep 10
@@ -207,38 +81,6 @@ pipeline {
     	}
     }
 }
-    stage('Loading Cache') {
-      steps {
-       	script {	  
-     openshift.withCluster() {
-      openshift.withProject( "${env.projectName}" ){
-	ROUTEcache = sh(returnStdout: true, script: "oc get route ${env.ROUTEcacheservice} --template='{{.spec.host}}' -n ${env.projectName}").trim()
-	      def response = sh(script: "curl https://${ROUTEcache}/load-cache-from-db", returnStdout: true)
-	      
-	      echo "Loading Cache ${response}"
-	      //"curl -vv 'https://${ROUTEcache}/load-cache-from-db'"
-	 // sh(returnStdout: true, script: "curl -vv 'https://${ROUTEcache}/load-cache-from-db'").trim()
-      }
-     }
-   }
-  }	
-}
-   
- /*stage('Generating Load') {
-      steps {
-       	script {
-	 if ( LoadTest == "yes" ) {		
-     openshift.withCluster() {
-      openshift.withProject( "${env.devopsNamespace}" ){
-	      
-  	openshift.apply( openshift.process( "-f", LoadTestPipeline) )    
-      }
-     }	     
-     }
-   }
-  }	
-}*/
-	  
 	  
 	  
     }
