@@ -38,9 +38,9 @@ pipeline {
               echo "Found BuildConfig ${env.componentName}"
             }
             echo "Starting Image Build"
-	      sh "ls -ltr target/" 
-	      bc.startBuild("--from-file=./target/${env.binaryArtifact}.war","--follow=true")
-	      echo "oc start-build ${env.componentName} --from-file=./target/${env.binaryArtifact}.war --follow -n ${env.projectName}"	         
+	      sh "ls -ltr helloworld/target/" 
+	      bc.startBuild("--from-file=./helloworld/target/${env.binaryArtifact}.war","--follow=true")
+	      echo "oc start-build ${env.componentName} --from-file=./helloworld/target/${env.binaryArtifact}.war --follow -n ${env.projectName}"	         
               openshift.tag("${env.componentName}:${env.latestTag}", "${env.componentName}:${env.buildTag}")
 	      openshift.selector("istag", "${env.componentName}:${env.latestTag}").delete()
               openshift.tag("${env.componentName}:${env.buildTag}", "${env.componentName}:${env.latestTag}")
