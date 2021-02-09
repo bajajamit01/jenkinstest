@@ -7,7 +7,7 @@ pipeline {
         def readContent = readJSON file: './devops/env.json'
         componentName = "${readContent['component_name']}"
         projectName = "devtest" 
-        builderImage = "jboss-eap72-openshift";
+        builderImage = "jboss-eap72-openshift:latest";
         latestTag = "latest";
         buildTag = "Build-${BUILD_NUMBER}";
         releaseTag = "qa";
